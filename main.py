@@ -5,6 +5,13 @@ import cv2 as cv
 
 INT_MAX = 2147483647
 
+
+class Coordinate:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+
+
 def grab_cut(img_target, selected_area):
     z_mask = np.zeros(img_target.shape[:2], np.uint8)
     bgdModel = np.zeros((1, 65), np.float64)
@@ -74,9 +81,10 @@ def optimized_boundary(img_s, img_t, obj_mask, rect):
 
     # Calcula o menor caminho a partir de cada pixel inicial
     paths_list = np.full((len(beginnings), rect[3], rect[2]), INT_MAX, np.int32)
+    parents_list = np.full((len(beginnings), rect[3], rect[2]), Coordinate(0, 0), Coordinate)
     for i in range(0, len(beginnings)):
         init = beginnings[i]
-        min_path(weights, paths_list[i], beginnings, destinations, init[0], init[1])
+        min_path(weights, paths_list[i], parents_list[i], beginnings, destinations, init[0], init[1])
 
     # Encontra o menor caminho entre um pixel de destino e um pixel inicial nos resultados calculados
     min_weight = [0, 0, 0, INT_MAX]
@@ -88,18 +96,48 @@ def optimized_boundary(img_s, img_t, obj_mask, rect):
                 min_weight = [x, y, index, weight]
 
     path = paths_list[min_weight[2]]
-    closest_destiny = paths_list[min_weight[0], min_weight[1]]
+    parent_list = parents_list[min_weight[2]]
+    selected_boundary = np.full((rect[3], rect[2]), 0, np.uint8)
+    current_x = min_weight[0]
+    current_y = min_weight[1]
+    while path[current_y][current_x] != 0:
+        selected_boundary[current_y][current_x] = 255
+        next_node = parent_list[current_y][current_x]
+        current_y = next_node.y
+        current_x = next_node.x
 
-    # Percorre o menor caminho demarcando a máscara com o valor 255 (branco)
-    boundary_mask = np.full(img_s.shape[:2], 0, np.uint8)
+    selected_boundary[current_y][current_x] = 255
 
-    shortest_destiny = []
+    cv.imshow("Result", selected_boundary)
+    cv.waitKey(0)
 
+    mask_aux = np.full((rect[3], rect[2]), 0, np.uint8)
+    initial_inside_pixel = [0, 0]
+
+    for y, row in enumerate(selected_boundary):
+        for x, pixel in enumerate(row):
+            if pixel == 0 and x - 1 > 0 and y > 0:
+                last_pixel = mask_aux[y][x - 1]
+                up_pixel = mask_aux[y - 1][x]
+                if last_pixel == 255:
+                    if up_pixel == 255:
+                        mask_aux[y][x] = 255
+                    else:
+                        temp_y = y
+                        temp_x = x
+                        while temp_x > 0 and selected_boundary[temp_y][temp_x] == 0:
+                            mask_aux[temp_y][temp_x] = 0
+                            temp_x = temp_x - 1
+            else:
+                mask_aux[y][x] = pixel
+
+    cv.imshow("Result 2", mask_aux)
+    cv.waitKey(0)
 
     print("oi")
 
 
-def min_path(weights, paths, beginnings, destinations, init_x, init_y):
+def min_path(weights, paths, parent_list, beginnings, destinations, init_x, init_y):
     visited = np.full((weights.shape[0], weights.shape[1]), False, dtype=bool)
     paths[init_y, init_x] = 0
     visited[init_y, init_x] = True
@@ -109,7 +147,7 @@ def min_path(weights, paths, beginnings, destinations, init_x, init_y):
         [x, y] = queue.pop(0)
         node_weight = weights[y][x]
         neighborhood = get_neighborhood(x, y, weights, visited, beginnings, destinations, True)
-        paths[y][x] = node_weight + calc_min_weight(neighborhood, paths)
+        paths[y][x] = node_weight + calc_min_weight(neighborhood, paths, parent_list, x, y)
         append_neighborhood(x, y, queue, weights, visited, beginnings, destinations)
 
 
@@ -176,16 +214,18 @@ def is_safe(x, y, column_size, row_size):
     return row_size > x >= 0 and column_size > y >= 0
 
 
-def calc_min_weight(paths_coordinates, paths):
-    weights = []
+def calc_min_weight(paths_coordinates, paths, parent_list, x, y):
     min_weight = INT_MAX
+    valid_coordinates = []
     for path_coordinates in paths_coordinates:
-        [x, y] = path_coordinates
-        if len(paths) > y >= 0 and len(paths[0]) > x >= 0:
-            weights.append(paths[y][x])
-    for weight in weights:
+        if len(paths) > path_coordinates[1] >= 0 and len(paths[0]) > path_coordinates[0] >= 0:
+            valid_coordinates.append(path_coordinates)
+    for coordinate in valid_coordinates:
+        [dest_x, dest_y] = coordinate
+        weight = paths[dest_y][dest_x]
         if weight < min_weight:
             min_weight = weight
+            parent_list[y][x] = Coordinate(dest_x, dest_y)
     return min_weight
 
 
