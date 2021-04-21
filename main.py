@@ -22,22 +22,16 @@ def grab_cut(img_target, selected_area):
     output_mask = (output_mask * 255).astype("uint8")
     output = cv.bitwise_and(img_target, img_target, mask=output_mask)
 
-    # cv.imshow("Input", img_target)
-    # cv.imshow("GrabCut Mask", output_mask)
-    # cv.imshow("GrabCut Output", output)
-    # cv.waitKey(0)
     return output_mask, output
 
 
-def poisson_editing(img_src, img_dst):
-    mask = 255 * np.ones(img_dst.shape, img_dst.dtype)
-
+def poisson_editing(img_src, img_dst, mask):
     width, height, channels = img_src.shape
     center = (round(height / 2), round(width / 2))
 
-    mixed_clone = cv.seamlessClone(img_dst, img_src, mask, center, cv.MIXED_CLONE)
+    mixed_clone = cv.seamlessClone(img_src, img_dst, mask, center, cv.MIXED_CLONE)
 
-    cv.imwrite("images/opencv-mixed-clone-example.jpg", mixed_clone)
+    return mixed_clone
 
 
 def optimized_boundary(img_s, img_t, obj_mask, rect):
@@ -107,12 +101,11 @@ def optimized_boundary(img_s, img_t, obj_mask, rect):
         current_x = next_node.x
 
     selected_boundary[current_y][current_x] = 255
-
-    cv.imshow("Result", selected_boundary)
-    cv.waitKey(0)
-
     initial_inside_pixel = [0, 0]
     found = False
+
+    cv.imshow("Otimazed Boundary", selected_boundary)
+    cv.waitKey(0)
 
     for y, row in enumerate(selected_boundary):
         for x, pixel in enumerate(row):
@@ -129,10 +122,18 @@ def optimized_boundary(img_s, img_t, obj_mask, rect):
 
     fill(selected_boundary, initial_inside_pixel)
 
-    cv.imshow("Result 2", selected_boundary)
+    final_mask = np.full((obj_mask.shape[0], obj_mask.shape[1]), 0, np.uint8)
+
+    for y, row in enumerate(selected_boundary):
+        for x, pixel in enumerate(row):
+            original_y = y + rect[0]
+            original_x = x + rect[1]
+            final_mask[original_y][original_x] = pixel
+
+    cv.imshow("Otimazed Boundary", final_mask)
     cv.waitKey(0)
 
-    print("oi")
+    return final_mask
 
 
 def fill(selected_boundary, initial_inside_pixel):
@@ -141,7 +142,7 @@ def fill(selected_boundary, initial_inside_pixel):
     width = len(selected_boundary[0])
 
     while len(queue) > 0:
-        [x, y] =   .pop(0)
+        [x, y] = queue.pop(0)
 
         if selected_boundary[y][x] == 0 and width > x > 0 and height > y > 0:
             selected_boundary[y][x] = 255
@@ -270,13 +271,25 @@ def pixel_color_distance(pixel_one, pixel_two):
 
 
 if __name__ == '__main__':
-    rect = (100, 100, 625, 235)
-    img_s = cv.imread('./images/airplane2.jpg')
-    img_t = cv.imread('./images/sky.jpg')
+    rect = (1, 1, 387, 298)
+    img_s = cv.imread('./images/patrick.jpg')
+    img_t = cv.imread('./images/ocean.png')
     obj_mask, obj = grab_cut(img_s, rect)
-    optimized_boundary(img_s, img_t, obj_mask, rect)
-    cv.imwrite("./images/result_mask.jpg", obj_mask)
-    cv.imshow('obj', obj_mask)
-    cv.imshow('image', img_s)
+
+    optimized_mask = optimized_boundary(img_s, img_t, obj_mask, rect)
+    blank_mask = np.full((img_s.shape[0], img_s.shape[1]), 0, np.uint8)
+    for x in range(0, rect[2]):
+        for y in range(0, rect[3]):
+            sx = rect[0] + x
+            sy = rect[1] + y
+            blank_mask[sy][sx] = 255
+
+    our_result = poisson_editing(img_s, img_t, optimized_mask)
+    obj_result = poisson_editing(img_s, img_t, obj_mask)
+    opencv_result = poisson_editing(img_s, img_t, blank_mask)
+
+    cv.imwrite("our_result_2.jpg", our_result)
+    cv.imwrite("object_directly_placed_result_2.jpg", obj_result)
+    cv.imwrite("opencv_method_result_2.jpg", opencv_result)
     cv.waitKey(0)
     cv.destroyAllWindows()
