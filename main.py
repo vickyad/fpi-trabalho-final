@@ -111,30 +111,44 @@ def optimized_boundary(img_s, img_t, obj_mask, rect):
     cv.imshow("Result", selected_boundary)
     cv.waitKey(0)
 
-    mask_aux = np.full((rect[3], rect[2]), 0, np.uint8)
     initial_inside_pixel = [0, 0]
+    found = False
 
     for y, row in enumerate(selected_boundary):
         for x, pixel in enumerate(row):
             if pixel == 0 and x - 1 > 0 and y > 0:
-                last_pixel = mask_aux[y][x - 1]
-                up_pixel = mask_aux[y - 1][x]
+                last_pixel = selected_boundary[y][x - 1]
+                up_pixel = selected_boundary[y - 1][x]
                 if last_pixel == 255:
                     if up_pixel == 255:
-                        mask_aux[y][x] = 255
-                    else:
-                        temp_y = y
-                        temp_x = x
-                        while temp_x > 0 and selected_boundary[temp_y][temp_x] == 0:
-                            mask_aux[temp_y][temp_x] = 0
-                            temp_x = temp_x - 1
-            else:
-                mask_aux[y][x] = pixel
+                        initial_inside_pixel = [x, y]
+                        found = True
+                        break
+        if found:
+            break
 
-    cv.imshow("Result 2", mask_aux)
+    fill(selected_boundary, initial_inside_pixel)
+
+    cv.imshow("Result 2", selected_boundary)
     cv.waitKey(0)
 
     print("oi")
+
+
+def fill(selected_boundary, initial_inside_pixel):
+    queue = [initial_inside_pixel]
+    height = len(selected_boundary)
+    width = len(selected_boundary[0])
+
+    while len(queue) > 0:
+        [x, y] =   .pop(0)
+
+        if selected_boundary[y][x] == 0 and width > x > 0 and height > y > 0:
+            selected_boundary[y][x] = 255
+            queue.append([x - 1, y])
+            queue.append([x + 1, y])
+            queue.append([x, y - 1])
+            queue.append([x, y + 1])
 
 
 def min_path(weights, paths, parent_list, beginnings, destinations, init_x, init_y):
