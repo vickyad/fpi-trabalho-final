@@ -12,7 +12,7 @@ class Coordinate:
         self.y = y
 
 
-def grab_cut(img_target, selected_area):
+def grab_cut(img_target, selected_area, source_name):
     z_mask = np.zeros(img_target.shape[:2], np.uint8)
     bgdModel = np.zeros((1, 65), np.float64)
     fgdModel = np.zeros((1, 65), np.float64)
@@ -21,6 +21,8 @@ def grab_cut(img_target, selected_area):
     output_mask = np.where((mask == cv.GC_BGD) | (mask == cv.GC_PR_BGD), 0, 1)
     output_mask = (output_mask * 255).astype("uint8")
     output = cv.bitwise_and(img_target, img_target, mask=output_mask)
+
+    cv.imwrite("results/" + source_name + "/object_mask.jpg", output_mask)
 
     return output_mask, output
 
@@ -34,20 +36,7 @@ def poisson_editing(img_src, img_dst, mask):
     return mixed_clone
 
 
-def optimized_boundary(img_s, img_t, obj_mask, rect):
-    limit_pixel_found = False
-    limit_line_init = (0, 0)
-
-    # Encontra o primeiro ponto válido da máscara (linha a linha)
-    for y in range(rect[1], rect[3]):
-        for x, pixel in enumerate(obj_mask[y]):
-            if pixel == 255:
-                limit_line_init = (x, y)
-                limit_pixel_found = True
-                break
-        if limit_pixel_found:
-            break
-
+def optimized_boundary(img_s, img_t, obj_mask, rect, source_name):
     # Constante K
     k = calculate_k(img_s, img_t, rect)
 
@@ -64,30 +53,55 @@ def optimized_boundary(img_s, img_t, obj_mask, rect):
                 pixel_t = img_t[sy][sx]
                 weights[y][x] = pow(pixel_color_distance(pixel_t, pixel_s) - k, 2)
 
-    # Pixels de inicio e fim do Dijkstra
+    # Encontra o primeiro ponto válido da máscara (linha a linha)
+    limit_pixel_found = False
+    limit_line_init = (0, 0)
+    for y in range(rect[1], rect[1] + rect[3]):
+        for x in range(rect[0], rect[0] + rect[2]):
+            pixel = obj_mask[y][x]
+            if pixel == 255:
+                limit_line_init = (x, y)
+                limit_pixel_found = True
+                break
+        if limit_pixel_found:
+            break
+
+    # Linha divisória para o calculo do menor caminho
     beginnings = []
-    destinations = []
     rect_x = limit_line_init[0] - rect[0]
     for y in range(rect[1], limit_line_init[1]):
-        rect_y = y - rect[0]
+        rect_y = y - rect[1]
         beginnings.append([rect_x, rect_y])
-        destinations.append([rect_x + 1, rect_y])
+
+    limit_line = np.full((rect[3], rect[2]), 0, np.uint8)
+    for y in range(rect[1], rect[1] + rect[3]):
+        for x in range(rect[0], rect[0] + rect[2]):
+            limit_line[y - rect[1]][x - rect[0]] = obj_mask[y][x]
+
+    for beginning in beginnings:
+        (bx, by) = beginning
+        limit_line[by][bx] = 255
+
+    cv.imwrite("results/" + source_name + "/limit_line.jpg", limit_line)
 
     # Calcula o menor caminho a partir de cada pixel inicial
-    paths_list = np.full((len(beginnings), rect[3], rect[2]), INT_MAX, np.int32)
+    paths_list = np.full((len(beginnings), rect[3], rect[2]), INT_MAX, np.int64)
     parents_list = np.full((len(beginnings), rect[3], rect[2]), Coordinate(0, 0), Coordinate)
     for i in range(0, len(beginnings)):
         init = beginnings[i]
-        min_path(weights, paths_list[i], parents_list[i], beginnings, destinations, init[0], init[1])
+        min_path(weights, paths_list[i], parents_list[i], beginnings, init[0], init[1])
 
     # Encontra o menor caminho entre um pixel de destino e um pixel inicial nos resultados calculados
     min_weight = [0, 0, 0, INT_MAX]
-    for destination in destinations:
-        for index, paths in enumerate(paths_list):
-            [x, y] = destination
-            weight = paths[y][x]
-            if weight < min_weight[3]:
-                min_weight = [x, y, index, weight]
+    for bi, beginning in enumerate(beginnings):
+        for ed in range(-1, 2):
+            [x, y] = beginning
+            end_x = x + 1
+            end_y = y + ed
+            if 0 <= end_y < len(paths_list[bi]):
+                weight = paths_list[bi][end_y][end_x]
+                if weight < min_weight[3]:
+                    min_weight = [end_x, end_y, bi, weight]
 
     path = paths_list[min_weight[2]]
     parent_list = parents_list[min_weight[2]]
@@ -104,8 +118,7 @@ def optimized_boundary(img_s, img_t, obj_mask, rect):
     initial_inside_pixel = [0, 0]
     found = False
 
-    cv.imshow("Otimazed Boundary", selected_boundary)
-    cv.waitKey(0)
+    cv.imwrite("results/" + source_name + "/optimized_boundary.jpg", selected_boundary)
 
     for y, row in enumerate(selected_boundary):
         for x, pixel in enumerate(row):
@@ -122,18 +135,17 @@ def optimized_boundary(img_s, img_t, obj_mask, rect):
 
     fill(selected_boundary, initial_inside_pixel)
 
-    final_mask = np.full((obj_mask.shape[0], obj_mask.shape[1]), 0, np.uint8)
+    optimized_boundary_mask = np.full((obj_mask.shape[0], obj_mask.shape[1]), 0, np.uint8)
 
     for y, row in enumerate(selected_boundary):
         for x, pixel in enumerate(row):
-            original_y = y + rect[0]
-            original_x = x + rect[1]
-            final_mask[original_y][original_x] = pixel
+            original_y = y + rect[1]
+            original_x = x + rect[0]
+            optimized_boundary_mask[original_y][original_x] = pixel
 
-    cv.imshow("Otimazed Boundary", final_mask)
-    cv.waitKey(0)
+    cv.imwrite("results/" + source_name + "/optimized_boundary_mask.jpg", optimized_boundary_mask)
 
-    return final_mask
+    return optimized_boundary_mask
 
 
 def fill(selected_boundary, initial_inside_pixel):
@@ -144,7 +156,7 @@ def fill(selected_boundary, initial_inside_pixel):
     while len(queue) > 0:
         [x, y] = queue.pop(0)
 
-        if selected_boundary[y][x] == 0 and width > x > 0 and height > y > 0:
+        if width > x > 0 and height > y > 0 and selected_boundary[y][x] == 0:
             selected_boundary[y][x] = 255
             queue.append([x - 1, y])
             queue.append([x + 1, y])
@@ -152,28 +164,33 @@ def fill(selected_boundary, initial_inside_pixel):
             queue.append([x, y + 1])
 
 
-def min_path(weights, paths, parent_list, beginnings, destinations, init_x, init_y):
+def min_path(weights, paths, parent_list, beginnings, init_x, init_y):
     visited = np.full((weights.shape[0], weights.shape[1]), False, dtype=bool)
+    calculated = np.full((weights.shape[0], weights.shape[1]), False, dtype=bool)
     paths[init_y, init_x] = 0
     visited[init_y, init_x] = True
+    calculated[init_y, init_x] = True
     queue = []
-    append_neighborhood(init_x, init_y, queue, weights, visited, beginnings, destinations)
+    append_neighborhood(init_x, init_y, queue, weights, visited, beginnings)
     while len(queue) > 0:
         [x, y] = queue.pop(0)
         node_weight = weights[y][x]
-        neighborhood = get_neighborhood(x, y, weights, visited, beginnings, destinations, True)
+        neighborhood = get_neighborhood(x, y, weights, visited, beginnings, True, calculated)
         paths[y][x] = node_weight + calc_min_weight(neighborhood, paths, parent_list, x, y)
-        append_neighborhood(x, y, queue, weights, visited, beginnings, destinations)
+        calculated[y][x] = True
+        append_neighborhood(x, y, queue, weights, visited, beginnings)
 
 
-def append_neighborhood(x, y, queue, weights, visited, beginnings, destinations):
-    queue.extend(get_neighborhood(x, y, weights, visited, beginnings, destinations))
+def append_neighborhood(x, y, queue, weights, visited, beginnings):
+    queue.extend(get_neighborhood(x, y, weights, visited, beginnings))
 
 
-def get_neighborhood(x, y, weights, visited, beginnings, destinations, visited_neighborhood=False):
+def get_neighborhood(x, y, weights, visited, beginnings, calculated_neighborhood=False, calculated=None):
+    if calculated is None:
+        calculated = []
     neighborhood = []
     its_initial_coordinate = coordinate_belongs_to_list(x, y, beginnings)
-    its_destiny_coordinate = coordinate_belongs_to_list(x, y, destinations)
+    its_destiny_coordinate = coordinate_belongs_to_list(x - 1, y, beginnings)
 
     def validate_direction(target_x, target_y):
         column_size = len(weights)
@@ -181,13 +198,17 @@ def get_neighborhood(x, y, weights, visited, beginnings, destinations, visited_n
         if not is_safe(target_x, target_y, column_size, row_size) or weights[target_y][target_x] == -1:
             return [False, 0, 0]
 
-        if its_initial_coordinate and coordinate_belongs_to_list(target_x, target_y, destinations):
+        if its_initial_coordinate and coordinate_belongs_to_list(target_x - 1, target_y, beginnings):
             return [False, 0, 0]
 
         if its_destiny_coordinate and coordinate_belongs_to_list(target_x, target_y, beginnings):
             return [False, 0, 0]
 
-        valid_direction = visited[target_y][target_x] if visited_neighborhood else not visited[target_y][target_x]
+        if calculated_neighborhood:
+            valid_direction = calculated[target_y][target_x]
+        else:
+            valid_direction = not visited[target_y][target_x]
+
         return [valid_direction, target_x, target_y]
 
     top_y = y - 1
@@ -270,26 +291,67 @@ def pixel_color_distance(pixel_one, pixel_two):
         pow(int(pixel_one[2]) - int(pixel_two[2]), 2))
 
 
-if __name__ == '__main__':
-    rect = (1, 1, 387, 298)
-    img_s = cv.imread('./images/patrick.jpg')
-    img_t = cv.imread('./images/ocean.png')
-    obj_mask, obj = grab_cut(img_s, rect)
+def get_user_mask(img_s, rect, source_name):
+    user_mask = np.full((img_s.shape[0], img_s.shape[1]), 0, np.uint8)
+    for y in range(rect[1], rect[1] + rect[3]):
+        for x in range(rect[0], rect[0] + rect[2]):
+            user_mask[y][x] = 255
 
-    optimized_mask = optimized_boundary(img_s, img_t, obj_mask, rect)
-    blank_mask = np.full((img_s.shape[0], img_s.shape[1]), 0, np.uint8)
-    for x in range(0, rect[2]):
-        for y in range(0, rect[3]):
-            sx = rect[0] + x
-            sy = rect[1] + y
-            blank_mask[sy][sx] = 255
+    cv.imwrite("results/" + source_name + "/user_mask.jpg", user_mask)
+    return user_mask
+
+
+def run_test(rect, source_name, target_name, source_extension, target_extension):
+    img_s = cv.imread('./images/' + source_name + '.' + source_extension)
+    img_t = cv.imread('./images/' + target_name + '.' + target_extension)
+    cv.imwrite("results/" + source_name + "/source.jpg", img_s)
+    cv.imwrite("results/" + source_name + "/target.jpg", img_t)
+
+    obj_mask, obj = grab_cut(img_s, rect, source_name)
+    optimized_mask = optimized_boundary(img_s, img_t, obj_mask, rect, source_name)
+    user_mask = get_user_mask(img_s, rect, source_name)
+    full_mask = np.full((img_s.shape[0], img_s.shape[1]), 255, np.uint8)
 
     our_result = poisson_editing(img_s, img_t, optimized_mask)
     obj_result = poisson_editing(img_s, img_t, obj_mask)
-    opencv_result = poisson_editing(img_s, img_t, blank_mask)
+    user_result = poisson_editing(img_s, img_t, user_mask)
+    open_cv_result = poisson_editing(img_s, img_t, full_mask)
 
-    cv.imwrite("our_result_2.jpg", our_result)
-    cv.imwrite("object_directly_placed_result_2.jpg", obj_result)
-    cv.imwrite("opencv_method_result_2.jpg", opencv_result)
-    cv.waitKey(0)
-    cv.destroyAllWindows()
+    cv.imwrite("results/" + source_name + "/our_result.jpg", our_result)
+    cv.imwrite("results/" + source_name + "/object_directly_placed_result.jpg", obj_result)
+    cv.imwrite("results/" + source_name + "/user_result.jpg", user_result)
+    cv.imwrite("results/" + source_name + "/opencv_method_result.jpg", open_cv_result)
+
+
+def run_airplane_test():
+    rect = (100, 100, 625, 235)
+    source_name = 'airplane'
+    target_name = 'sky'
+    source_extension = 'jpg'
+    target_extension = 'jpg'
+    run_test(rect, source_name, target_name, source_extension, target_extension)
+
+
+def run_moon_test():
+    rect = (66, 168, 546, 483)
+    source_name = 'moon'
+    target_name = 'night'
+    source_extension = 'jpg'
+    target_extension = 'jpg'
+    run_test(rect, source_name, target_name, source_extension, target_extension)
+
+
+def run_patrick_test():
+    rect = (100, 5, 310, 280)
+    source_name = 'patrick'
+    target_name = 'ocean'
+    source_extension = 'jpg'
+    target_extension = 'jpg'
+    run_test(rect, source_name, target_name, source_extension, target_extension)
+
+
+if __name__ == '__main__':
+    run_moon_test()
+    run_airplane_test()
+    run_patrick_test()
+
