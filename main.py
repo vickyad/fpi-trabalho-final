@@ -22,7 +22,9 @@ def grab_cut(img_target, selected_area, source_name):
     output_mask = (output_mask * 255).astype("uint8")
     output = cv.bitwise_and(img_target, img_target, mask=output_mask)
 
-    cv.imwrite("results/" + source_name + "/object_mask.jpg", output_mask)
+    #cv.imwrite("results/" + source_name + "/object_mask.jpg", output_mask)
+    cv.imshow("Object Mask", output_mask)
+    cv.waitKey(0)
 
     return output_mask, output
 
@@ -82,7 +84,9 @@ def optimized_boundary(img_s, img_t, obj_mask, rect, source_name):
         (bx, by) = beginning
         limit_line[by][bx] = 255
 
-    cv.imwrite("results/" + source_name + "/limit_line.jpg", limit_line)
+    #cv.imwrite("results/" + source_name + "/limit_line.jpg", limit_line)
+    cv.imshow("Bounding Line", limit_line)
+    cv.waitKey(0)
 
     # Calcula o menor caminho a partir de cada pixel inicial
     paths_list = np.full((len(beginnings), rect[3], rect[2]), INT_MAX, np.int64)
@@ -118,7 +122,9 @@ def optimized_boundary(img_s, img_t, obj_mask, rect, source_name):
     initial_inside_pixel = [0, 0]
     found = False
 
-    cv.imwrite("results/" + source_name + "/optimized_boundary.jpg", selected_boundary)
+    #cv.imwrite("results/" + source_name + "/optimized_boundary.jpg", selected_boundary)
+    cv.imshow("Optimized Boundary", selected_boundary)
+    cv.waitKey(0)
 
     for y, row in enumerate(selected_boundary):
         for x, pixel in enumerate(row):
@@ -143,7 +149,9 @@ def optimized_boundary(img_s, img_t, obj_mask, rect, source_name):
             original_x = x + rect[0]
             optimized_boundary_mask[original_y][original_x] = pixel
 
-    cv.imwrite("results/" + source_name + "/optimized_boundary_mask.jpg", optimized_boundary_mask)
+    #cv.imwrite("results/" + source_name + "/optimized_boundary_mask.jpg", optimized_boundary_mask)
+    cv.imshow("Optimized Boundary Mask", optimized_boundary_mask)
+    cv.waitKey(0)
 
     return optimized_boundary_mask
 
@@ -304,8 +312,12 @@ def get_user_mask(img_s, rect, source_name):
 def run_test(rect, source_name, target_name, source_extension, target_extension):
     img_s = cv.imread('./images/' + source_name + '.' + source_extension)
     img_t = cv.imread('./images/' + target_name + '.' + target_extension)
-    cv.imwrite("results/" + source_name + "/source.jpg", img_s)
-    cv.imwrite("results/" + source_name + "/target.jpg", img_t)
+    #cv.imwrite("results/" + source_name + "/source.jpg", img_s)
+    #cv.imwrite("results/" + source_name + "/target.jpg", img_t)
+    cv.imshow("Source", img_s)
+    cv.waitKey(0)
+    cv.imshow("Target", img_t)
+    cv.waitKey(0)
 
     obj_mask, obj = grab_cut(img_s, rect, source_name)
     optimized_mask = optimized_boundary(img_s, img_t, obj_mask, rect, source_name)
@@ -317,10 +329,19 @@ def run_test(rect, source_name, target_name, source_extension, target_extension)
     user_result = poisson_editing(img_s, img_t, user_mask)
     open_cv_result = poisson_editing(img_s, img_t, full_mask)
 
-    cv.imwrite("results/" + source_name + "/our_result.jpg", our_result)
-    cv.imwrite("results/" + source_name + "/object_directly_placed_result.jpg", obj_result)
-    cv.imwrite("results/" + source_name + "/user_result.jpg", user_result)
-    cv.imwrite("results/" + source_name + "/opencv_method_result.jpg", open_cv_result)
+    #cv.imwrite("results/" + source_name + "/our_result.jpg", our_result)
+    #cv.imwrite("results/" + source_name + "/object_directly_placed_result.jpg", obj_result)
+    #cv.imwrite("results/" + source_name + "/user_result.jpg", user_result)
+    #cv.imwrite("results/" + source_name + "/opencv_method_result.jpg", open_cv_result)
+
+    cv.imshow("Our Result.jpg", our_result)
+    cv.waitKey(0)
+    cv.imshow("Object Directly Placed Result.jpg", obj_result)
+    cv.waitKey(0)
+    cv.imshow("User Selection Result", user_result)
+    cv.waitKey(0)
+    cv.imshow("Full Image Result", open_cv_result)
+    cv.waitKey(0)
 
 
 def run_airplane_test():
@@ -351,7 +372,5 @@ def run_patrick_test():
 
 
 if __name__ == '__main__':
-    run_moon_test()
     run_airplane_test()
-    run_patrick_test()
 
